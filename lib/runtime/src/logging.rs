@@ -75,6 +75,7 @@ struct LoggingConfig {
     log_level: String,
     log_filters: HashMap<String, String>,
 }
+
 impl Default for LoggingConfig {
     fn default() -> Self {
         LoggingConfig {

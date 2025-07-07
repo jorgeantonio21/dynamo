@@ -80,7 +80,7 @@ pub struct DistributedRuntime {
     // local runtime
     runtime: Runtime,
 
-    // we might consider a unifed transport manager here
+    // we might consider a unified transport manager here
     etcd_client: Option<transports::etcd::Client>,
     nats_client: transports::nats::Client,
     tcp_server: Arc<OnceCell<Arc<transports::tcp::server::TcpStreamServer>>>,
