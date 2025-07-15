@@ -1,0 +1,60 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+groups:
+  - name: dynamo_rate_limiting
+    rules:
+      - alert: HighRateLimitRejections
+        expr: |
+          (
+            rate(nv_llm_http_service_rate_limit_requests_total{status="rejected"}[5m])
+            /
+            rate(nv_llm_http_service_requests_total[5m])
+          ) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          component: rate_limiter
+        annotations:
+          summary: "High rate limiting rejection rate for model {{ $labels.model }}"
+          description: "Model {{ $labels.model }} is rejecting {{ $value | humanizePercentage }} of requests due to rate limiting for the past 2 minutes."
+
+  - name: dynamo_performance
+    rules:
+      - alert: HighTTFT
+        expr: |
+          histogram_quantile(0.95, 
+            rate(nv_llm_http_service_time_to_first_token_seconds_bucket[5m])
+          ) > 5.0
+        for: 3m
+        labels:
+          severity: warning
+          component: performance
+        annotations:
+          summary: "High TTFT for model {{ $labels.model }}"
+          description: "Model {{ $labels.model }} 95th percentile TTFT is {{ $value }}s for the past 3 minutes."
+
+      - alert: HighITL
+        expr: |
+          histogram_quantile(0.95,
+            rate(nv_llm_http_service_inter_token_latency_seconds_bucket[5m])
+          ) > 0.5
+        for: 3m
+        labels:
+          severity: warning
+          component: performance
+        annotations:
+          summary: "High ITL for model {{ $labels.model }}"
+          description: "Model {{ $labels.model }} 95th percentile ITL is {{ $value }}s for the past 3 minutes."
