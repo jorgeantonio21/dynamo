@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -47,6 +48,7 @@ pub struct LocalModelBuilder {
     kv_cache_block_size: u32,
     http_port: u16,
     migration_limit: u32,
+    max_inflight_requests_per_model: HashMap<String, u32>,
 }
 
 impl Default for LocalModelBuilder {
@@ -62,6 +64,7 @@ impl Default for LocalModelBuilder {
             template_file: Default::default(),
             router_config: Default::default(),
             migration_limit: Default::default(),
+            max_inflight_requests_per_model: Default::default(),
         }
     }
 }
@@ -119,6 +122,14 @@ impl LocalModelBuilder {
         self
     }
 
+    pub fn max_inflight_requests_per_model(
+        &mut self,
+        max_inflight_requests_per_model: HashMap<String, u32>,
+    ) -> &mut Self {
+        self.max_inflight_requests_per_model = max_inflight_requests_per_model;
+        self
+    }
+
     /// Make an LLM ready for use:
     /// - Download it from Hugging Face (and NGC in future) if necessary
     /// - Resolve the path
@@ -155,6 +166,7 @@ impl LocalModelBuilder {
                 template,
                 http_port: self.http_port,
                 router_config: self.router_config.take().unwrap_or_default(),
+                max_inflight_requests_per_model: self.max_inflight_requests_per_model.clone(),
             });
         }
 
@@ -212,6 +224,7 @@ impl LocalModelBuilder {
             template,
             http_port: self.http_port,
             router_config: self.router_config.take().unwrap_or_default(),
+            max_inflight_requests_per_model: self.max_inflight_requests_per_model.clone(),
         })
     }
 }
@@ -224,6 +237,7 @@ pub struct LocalModel {
     template: Option<RequestTemplate>,
     http_port: u16, // Only used if input is HTTP server
     router_config: RouterConfig,
+    max_inflight_requests_per_model: HashMap<String, u32>, // Only used if input is HTTP server
 }
 
 impl LocalModel {
@@ -270,6 +284,10 @@ impl LocalModel {
     /// For the case where we only need the card and don't want to clone it.
     pub fn into_card(self) -> ModelDeploymentCard {
         self.card
+    }
+
+    pub fn max_inflight_requests_per_model(&self) -> &HashMap<String, u32> {
+        &self.max_inflight_requests_per_model
     }
 
     /// Attach this model the endpoint. This registers it on the network

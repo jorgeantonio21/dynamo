@@ -1,11 +1,13 @@
 // SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::HashMap;
 use std::env::var;
 use std::sync::Arc;
 use std::time::Duration;
 
 use super::metrics;
+use super::rate_limiter::RateLimiter;
 use super::Metrics;
 use super::RouteDoc;
 use crate::discovery::ModelManager;
@@ -19,6 +21,7 @@ use tokio_util::sync::CancellationToken;
 pub struct State {
     metrics: Arc<Metrics>,
     manager: Arc<ModelManager>,
+    rate_limiter: Option<RateLimiter>,
 }
 
 impl State {
@@ -26,7 +29,13 @@ impl State {
         Self {
             manager,
             metrics: Arc::new(Metrics::default()),
+            rate_limiter: None,
         }
+    }
+
+    pub fn with_rate_limiter(mut self, rate_limiter: RateLimiter) -> Self {
+        self.rate_limiter = Some(rate_limiter);
+        self
     }
 
     /// Get the Prometheus [`Metrics`] object which tracks request counts and inflight requests
@@ -40,6 +49,17 @@ impl State {
 
     pub fn manager_clone(&self) -> Arc<ModelManager> {
         self.manager.clone()
+    }
+
+    pub fn check_rate_limit(
+        &self,
+        model: &str,
+    ) -> Result<(), crate::http::service::error::HttpError> {
+        if let Some(ref rate_limiter) = self.rate_limiter {
+            rate_limiter.check_rate_limit(model)
+        } else {
+            Ok(())
+        }
     }
 
     // TODO
@@ -84,6 +104,9 @@ pub struct HttpServiceConfig {
 
     #[builder(default = "None")]
     request_template: Option<RequestTemplate>,
+
+    #[builder(default = "HashMap::new()")]
+    max_inflight_requests_per_model: HashMap<String, u32>,
 }
 
 impl HttpService {
@@ -155,7 +178,17 @@ impl HttpServiceConfigBuilder {
         let config: HttpServiceConfig = self.build_internal()?;
 
         let model_manager = Arc::new(ModelManager::new());
-        let state = Arc::new(State::new(model_manager));
+        let mut state = State::new(model_manager);
+
+        if !config.max_inflight_requests_per_model.is_empty() {
+            let rate_limiter = RateLimiter::new(
+                state.metrics_clone(),
+                config.max_inflight_requests_per_model,
+            );
+            state = state.with_rate_limiter(rate_limiter);
+        }
+
+        let state = Arc::new(state);
 
         // enable prometheus metrics
         let registry = metrics::Registry::new();

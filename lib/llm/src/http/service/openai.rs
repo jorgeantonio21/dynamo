@@ -101,6 +101,18 @@ impl ErrorMessage {
         )
     }
 
+    /// Too Many Requests Error
+    /// Return this error when the service is overloaded and cannot handle the current request.
+    /// This is a temporary error and the client should retry after a short delay.
+    pub fn too_many_requests_error(msg: &str) -> ErrorResponse {
+        (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(ErrorMessage {
+                error: msg.to_string(),
+            }),
+        )
+    }
+
     /// The OAI endpoints call an [`dynamo.runtime::engine::AsyncEngine`] which are specialized to return
     /// an [`anyhow::Error`]. This method will convert the [`anyhow::Error`] into an [`HttpError`].
     /// If successful, it will return the [`HttpError`] as an [`ErrorMessage::internal_server_error`]
@@ -206,6 +218,11 @@ async fn completions(
     // return a 503 if the service is not ready
     check_ready(&state)?;
 
+    // Check ingress rate limits before proceeding to process the request
+    state
+        .check_rate_limit(&request.inner.model)
+        .map_err(|_| ErrorMessage::too_many_requests_error("Too many requests"))?;
+
     // todo - extract distributed tracing id and context id from headers
     let request_id = uuid::Uuid::new_v4().to_string();
 
@@ -306,6 +323,11 @@ async fn embeddings(
     // return a 503 if the service is not ready
     check_ready(&state)?;
 
+    // Check ingress rate limits before proceeding to process the request
+    state
+        .check_rate_limit(&request.inner.model)
+        .map_err(|_| ErrorMessage::too_many_requests_error("Too many requests"))?;
+
     // todo - extract distributed tracing id and context id from headers
     let request_id = uuid::Uuid::new_v4().to_string();
 
@@ -404,6 +426,11 @@ async fn chat_completions(
 ) -> Result<Response, ErrorResponse> {
     // return a 503 if the service is not ready
     check_ready(&state)?;
+
+    // Check ingress rate limits before proceeding to process the request
+    state
+        .check_rate_limit(&request.inner.model)
+        .map_err(|_| ErrorMessage::too_many_requests_error("Too many requests"))?;
 
     let request_id = request.id().to_string();
 
@@ -621,6 +648,11 @@ async fn responses(
 ) -> Result<Response, ErrorResponse> {
     // return a 503 if the service is not ready
     check_ready(&state)?;
+
+    // Check ingress rate limits before proceeding to process the request
+    state
+        .check_rate_limit(&request.inner.model)
+        .map_err(|_| ErrorMessage::too_many_requests_error("Too many requests"))?;
 
     // Handle unsupported fields - if Some(resp) is returned by validate_unsupported_fields,
     // then a field was used that is unsupported. We will log an error message

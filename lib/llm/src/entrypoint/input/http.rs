@@ -28,6 +28,12 @@ pub async fn run(runtime: Runtime, engine_config: EngineConfig) -> anyhow::Resul
         .enable_cmpl_endpoints(true)
         .enable_embeddings_endpoints(true)
         .with_request_template(engine_config.local_model().request_template())
+        .max_inflight_requests_per_model(
+            engine_config
+                .local_model()
+                .max_inflight_requests_per_model()
+                .clone(),
+        )
         .build()?;
     match engine_config {
         EngineConfig::Dynamic(_) => {
