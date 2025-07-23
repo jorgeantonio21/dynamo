@@ -51,12 +51,12 @@ impl State {
         self.manager.clone()
     }
 
-    pub fn check_rate_limit(
+    pub fn check_inflight_requests_rate_limit(
         &self,
         model: &str,
     ) -> Result<(), crate::http::service::error::HttpError> {
         if let Some(ref rate_limiter) = self.rate_limiter {
-            rate_limiter.check_rate_limit(model)
+            rate_limiter.check_inflight_requests_rate_limit(model)
         } else {
             Ok(())
         }

@@ -26,7 +26,7 @@ impl RateLimiter {
 
     /// Check if a request for the given model should be rate limited, based on the number of inflight requests
     /// Returns an error if the rate limit is exceeded, otherwise returns Ok(())
-    pub fn check_rate_limit(&self, model: &str) -> Result<(), HttpError> {
+    pub fn check_inflight_requests_rate_limit(&self, model: &str) -> Result<(), HttpError> {
         let max_inflight = match self.get_max_inflight_count_per_model(model) {
             Some(max_inflight) => max_inflight as i64,
             None => return Ok(()),

@@ -220,7 +220,7 @@ async fn completions(
 
     // Check ingress rate limits before proceeding to process the request
     state
-        .check_rate_limit(&request.inner.model)
+        .check_inflight_requests_rate_limit(&request.inner.model)
         .map_err(|_| ErrorMessage::too_many_requests_error("Too many requests"))?;
 
     // todo - extract distributed tracing id and context id from headers
@@ -325,7 +325,7 @@ async fn embeddings(
 
     // Check ingress rate limits before proceeding to process the request
     state
-        .check_rate_limit(&request.inner.model)
+        .check_inflight_requests_rate_limit(&request.inner.model)
         .map_err(|_| ErrorMessage::too_many_requests_error("Too many requests"))?;
 
     // todo - extract distributed tracing id and context id from headers
@@ -429,7 +429,7 @@ async fn chat_completions(
 
     // Check ingress rate limits before proceeding to process the request
     state
-        .check_rate_limit(&request.inner.model)
+        .check_inflight_requests_rate_limit(&request.inner.model)
         .map_err(|_| ErrorMessage::too_many_requests_error("Too many requests"))?;
 
     let request_id = request.id().to_string();
@@ -651,7 +651,7 @@ async fn responses(
 
     // Check ingress rate limits before proceeding to process the request
     state
-        .check_rate_limit(&request.inner.model)
+        .check_inflight_requests_rate_limit(&request.inner.model)
         .map_err(|_| ErrorMessage::too_many_requests_error("Too many requests"))?;
 
     // Handle unsupported fields - if Some(resp) is returned by validate_unsupported_fields,
