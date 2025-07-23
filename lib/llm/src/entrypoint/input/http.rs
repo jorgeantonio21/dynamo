@@ -28,12 +28,6 @@ pub async fn run(runtime: Runtime, engine_config: EngineConfig) -> anyhow::Resul
         .enable_cmpl_endpoints(true)
         .enable_embeddings_endpoints(true)
         .with_request_template(engine_config.local_model().request_template())
-        .max_inflight_requests_per_model(
-            engine_config
-                .local_model()
-                .max_inflight_requests_per_model()
-                .clone(),
-        )
         .build()?;
     match engine_config {
         EngineConfig::Dynamic(_) => {
@@ -62,6 +56,12 @@ pub async fn run(runtime: Runtime, engine_config: EngineConfig) -> anyhow::Resul
             let manager = http_service.model_manager();
             manager.add_completions_model(model.service_name(), engine.clone())?;
             manager.add_chat_completions_model(model.service_name(), engine)?;
+            if let Some(max_inflight_requests) = model.max_inflight_requests() {
+                http_service.set_max_inflight_requests_for_model(
+                    model.service_name(),
+                    max_inflight_requests,
+                );
+            }
         }
         EngineConfig::StaticCore {
             engine: inner_engine,
@@ -82,6 +82,12 @@ pub async fn run(runtime: Runtime, engine_config: EngineConfig) -> anyhow::Resul
             >(model.card(), inner_engine)
             .await?;
             manager.add_completions_model(model.service_name(), cmpl_pipeline)?;
+            if let Some(max_inflight_requests) = model.max_inflight_requests() {
+                http_service.set_max_inflight_requests_for_model(
+                    model.service_name(),
+                    max_inflight_requests,
+                );
+            }
         }
     }
     tracing::debug!(

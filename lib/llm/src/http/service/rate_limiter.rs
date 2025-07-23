@@ -4,23 +4,20 @@
 use crate::http::service::error::HttpError;
 use crate::http::service::metrics::Metrics;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 /// Rate limiter for bounding the number of inflight requests per model
 pub struct RateLimiter {
     metrics: Arc<Metrics>,
-    max_inflight_requests_per_model: HashMap<String, u32>,
+    max_inflight_requests_per_model: RwLock<HashMap<String, u32>>,
 }
 
 impl RateLimiter {
     /// Create a new rate limiter, with optional per-model rate limits
-    pub fn new(
-        metrics: Arc<Metrics>,
-        max_inflight_requests_per_model: HashMap<String, u32>,
-    ) -> Self {
+    pub fn new(metrics: Arc<Metrics>) -> Self {
         Self {
             metrics,
-            max_inflight_requests_per_model,
+            max_inflight_requests_per_model: RwLock::new(Default::default()),
         }
     }
 
@@ -61,6 +58,17 @@ impl RateLimiter {
     }
 
     fn get_max_inflight_count_per_model(&self, model: &str) -> Option<u32> {
-        self.max_inflight_requests_per_model.get(model).copied()
+        self.max_inflight_requests_per_model
+            .read()
+            .unwrap()
+            .get(model)
+            .copied()
+    }
+
+    pub fn set_max_inflight_requests_for_model(&self, model: &str, max_inflight_requests: u32) {
+        self.max_inflight_requests_per_model
+            .write()
+            .unwrap()
+            .insert(model.to_string(), max_inflight_requests);
     }
 }
