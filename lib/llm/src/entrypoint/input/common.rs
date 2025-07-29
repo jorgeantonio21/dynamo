@@ -8,6 +8,7 @@ use crate::{
     discovery::{ModelManager, ModelWatcher, MODEL_ROOT_PATH},
     engines::StreamingEngineAdapter,
     entrypoint::EngineConfig,
+    http::service::rate_limiter::KvCacheUtilizationRateLimiter,
     model_card::ModelDeploymentCard,
     preprocessor::OpenAIPreprocessor,
     protocols::common::llm_backend::{BackendOutput, PreprocessedRequest},
@@ -68,8 +69,11 @@ pub async fn prepare_engine(
             let (_prefix, _watcher, receiver) = models_watcher.dissolve();
 
             let inner_watch_obj = watch_obj.clone();
+            let rate_limiter = KvCacheUtilizationRateLimiter::new(
+                local_model.enable_kv_cache_utilization_rate_limiter(),
+            );
             let _watcher_task = tokio::spawn(async move {
-                inner_watch_obj.watch(receiver).await;
+                inner_watch_obj.watch(receiver, rate_limiter).await;
             });
             tracing::info!("Waiting for remote model..");
 

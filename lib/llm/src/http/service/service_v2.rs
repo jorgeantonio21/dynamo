@@ -9,6 +9,7 @@ use super::metrics;
 use super::Metrics;
 use super::RouteDoc;
 use crate::discovery::ModelManager;
+use crate::http::service::rate_limiter::KvCacheUtilizationRateLimiter;
 use crate::request_template::RequestTemplate;
 use anyhow::Result;
 use derive_builder::Builder;
@@ -19,13 +20,15 @@ use tokio_util::sync::CancellationToken;
 pub struct State {
     metrics: Arc<Metrics>,
     manager: Arc<ModelManager>,
+    rate_limiter: KvCacheUtilizationRateLimiter,
 }
 
 impl State {
-    pub fn new(manager: Arc<ModelManager>) -> Self {
+    pub fn new(manager: Arc<ModelManager>, rate_limiter: KvCacheUtilizationRateLimiter) -> Self {
         Self {
             manager,
             metrics: Arc::new(Metrics::default()),
+            rate_limiter,
         }
     }
 
@@ -40,6 +43,10 @@ impl State {
 
     pub fn manager_clone(&self) -> Arc<ModelManager> {
         self.manager.clone()
+    }
+
+    pub fn rate_limiter(&self) -> &KvCacheUtilizationRateLimiter {
+        &self.rate_limiter
     }
 
     // TODO
@@ -84,6 +91,9 @@ pub struct HttpServiceConfig {
 
     #[builder(default = "None")]
     request_template: Option<RequestTemplate>,
+
+    #[builder(default = "KvCacheUtilizationRateLimiter::default()")]
+    rate_limiter: KvCacheUtilizationRateLimiter,
 }
 
 impl HttpService {
@@ -155,7 +165,7 @@ impl HttpServiceConfigBuilder {
         let config: HttpServiceConfig = self.build_internal()?;
 
         let model_manager = Arc::new(ModelManager::new());
-        let state = Arc::new(State::new(model_manager));
+        let state = Arc::new(State::new(model_manager, config.rate_limiter));
 
         // enable prometheus metrics
         let registry = metrics::Registry::new();
@@ -223,6 +233,11 @@ impl HttpServiceConfigBuilder {
 
     pub fn with_request_template(mut self, request_template: Option<RequestTemplate>) -> Self {
         self.request_template = Some(request_template);
+        self
+    }
+
+    pub fn with_rate_limiter(mut self, rate_limiter: KvCacheUtilizationRateLimiter) -> Self {
+        self.rate_limiter = Some(rate_limiter);
         self
     }
 }

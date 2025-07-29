@@ -28,6 +28,9 @@ pub struct ModelEntry {
 
     /// Specifies whether the model is a chat, completions, etc model.
     pub model_type: ModelType,
+
+    /// Maximum allowed aggregate KV cache utilization rate for this model (in integer percentage terms)
+    pub max_kv_cache_utilization_rate: Option<u64>,
 }
 
 impl ModelEntry {

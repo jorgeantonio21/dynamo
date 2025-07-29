@@ -131,6 +131,14 @@ pub struct Flags {
     /// These are the command line arguments to the python engine when using `pystr` or `pytok`.
     #[arg(index = 2, last = true, hide = true, allow_hyphen_values = true)]
     pub last: Vec<String>,
+
+    /// Enable KV cache utilization rate limiter config for the HTTP server
+    #[arg(long, default_value = "false")]
+    pub enable_kv_cache_utilization_rate_limiter: bool,
+
+    /// Maximum allowed aggregate KV cache utilization rate
+    #[arg(long, default_value = "100")]
+    pub max_kv_cache_utilization_rate: u64,
 }
 
 impl Flags {

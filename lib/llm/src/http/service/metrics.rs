@@ -32,6 +32,7 @@ pub struct Metrics {
     output_sequence_length: HistogramVec,
     time_to_first_token: HistogramVec,
     inter_token_latency: HistogramVec,
+    rate_limit_requests: IntCounterVec,
 }
 
 /// RAII object for inflight gauge and request counters
@@ -189,6 +190,15 @@ impl Metrics {
         )
         .unwrap();
 
+        let rate_limit_requests = IntCounterVec::new(
+            Opts::new(
+                format!("{}_http_service_rate_limit_requests_total", prefix),
+                "Total number of requests that were rate limited",
+            ),
+            &["model", "endpoint", "request_type"],
+        )
+        .unwrap();
+
         Metrics {
             request_counter,
             inflight_gauge,
@@ -197,6 +207,7 @@ impl Metrics {
             output_sequence_length,
             time_to_first_token,
             inter_token_latency,
+            rate_limit_requests,
         }
     }
 
@@ -244,6 +255,21 @@ impl Metrics {
             .inc()
     }
 
+    /// Increment the counter for rate limited requests for the given dimensions:
+    /// - model
+    /// - endpoint (completions/chat_completions)
+    /// - request type (unary/stream)
+    pub fn inc_rate_limit_requests(
+        &self,
+        model: &str,
+        endpoint: &Endpoint,
+        request_type: &RequestType,
+    ) {
+        self.rate_limit_requests
+            .with_label_values(&[model, endpoint.as_str(), request_type.as_str()])
+            .inc()
+    }
+
     /// Get the number if inflight requests for the given model
     pub fn get_inflight_count(&self, model: &str) -> i64 {
         self.inflight_gauge.with_label_values(&[model]).get()
@@ -265,6 +291,7 @@ impl Metrics {
         registry.register(Box::new(self.output_sequence_length.clone()))?;
         registry.register(Box::new(self.time_to_first_token.clone()))?;
         registry.register(Box::new(self.inter_token_latency.clone()))?;
+        registry.register(Box::new(self.rate_limit_requests.clone()))?;
         Ok(())
     }
 

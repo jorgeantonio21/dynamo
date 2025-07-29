@@ -18,16 +18,21 @@ use dynamo_runtime::{
 
 use crate::{
     backend::Backend,
+    http::service::rate_limiter::KvCacheUtilizationRateLimiter,
     kv_router::{KvPushRouter, KvRouterConfig},
     migration::Migration,
     model_type::ModelType,
     preprocessor::{OpenAIPreprocessor, PreprocessedEmbeddingRequest, PreprocessedRequest},
-    protocols::common::llm_backend::{EmbeddingsEngineOutput, LLMEngineOutput},
-    protocols::openai::chat_completions::{
-        NvCreateChatCompletionRequest, NvCreateChatCompletionStreamResponse,
+    protocols::{
+        common::llm_backend::{EmbeddingsEngineOutput, LLMEngineOutput},
+        openai::{
+            chat_completions::{
+                NvCreateChatCompletionRequest, NvCreateChatCompletionStreamResponse,
+            },
+            completions::{NvCreateCompletionRequest, NvCreateCompletionResponse},
+            embeddings::{NvCreateEmbeddingRequest, NvCreateEmbeddingResponse},
+        },
     },
-    protocols::openai::completions::{NvCreateCompletionRequest, NvCreateCompletionResponse},
-    protocols::openai::embeddings::{NvCreateEmbeddingRequest, NvCreateEmbeddingResponse},
 };
 
 use super::{ModelEntry, ModelManager, MODEL_ROOT_PATH};
@@ -67,7 +72,11 @@ impl ModelWatcher {
         }
     }
 
-    pub async fn watch(&self, mut events_rx: Receiver<WatchEvent>) {
+    pub async fn watch(
+        &self,
+        mut events_rx: Receiver<WatchEvent>,
+        rate_limiter: KvCacheUtilizationRateLimiter,
+    ) {
         tracing::debug!("model watcher started");
 
         while let Some(event) = events_rx.recv().await {
@@ -102,7 +111,7 @@ impl ModelWatcher {
                         continue;
                     }
 
-                    match self.handle_put(&model_entry).await {
+                    match self.handle_put(&model_entry, rate_limiter.clone()).await {
                         Ok(()) => {
                             tracing::info!(model_name = model_entry.name, "added model");
                             self.notify_on_model.notify_waiters();
@@ -116,7 +125,8 @@ impl ModelWatcher {
                         }
                     }
                 }
-                WatchEvent::Delete(kv) => match self.handle_delete(&kv).await {
+                WatchEvent::Delete(kv) => match self.handle_delete(&kv, rate_limiter.clone()).await
+                {
                     Ok(Some(model_name)) => {
                         tracing::info!("removed model {}", model_name);
                     }
@@ -133,7 +143,11 @@ impl ModelWatcher {
 
     /// If the last instance running this model has gone delete it.
     /// Returns the name of the model we just deleted, if any.
-    async fn handle_delete(&self, kv: &KeyValue) -> anyhow::Result<Option<String>> {
+    async fn handle_delete(
+        &self,
+        kv: &KeyValue,
+        rate_limiter: KvCacheUtilizationRateLimiter,
+    ) -> anyhow::Result<Option<String>> {
         let key = kv.key_str()?;
         let model_entry = match self.manager.remove_model_entry(key) {
             Some(entry) => entry,
@@ -141,6 +155,8 @@ impl ModelWatcher {
                 anyhow::bail!("Missing ModelEntry for {key}");
             }
         };
+        rate_limiter.remove_rate_limiter_model_entry(&model_entry.name);
+
         let model_name = model_entry.name;
         let active_instances = self
             .entries_for_model(&model_name)
@@ -160,12 +176,24 @@ impl ModelWatcher {
 
     // Handles a PUT event from etcd, this usually means adding a new model to the list of served
     // models.
-    async fn handle_put(&self, model_entry: &ModelEntry) -> anyhow::Result<()> {
+    async fn handle_put(
+        &self,
+        model_entry: &ModelEntry,
+        rate_limiter: KvCacheUtilizationRateLimiter,
+    ) -> anyhow::Result<()> {
         let endpoint_id = model_entry.endpoint.clone();
-        let component = self
-            .drt
-            .namespace(&endpoint_id.namespace)?
-            .component(&endpoint_id.component)?;
+        let namespace = self.drt.namespace(&endpoint_id.namespace)?;
+        rate_limiter
+            .start_monitoring(
+                &namespace,
+                &model_entry.name,
+                model_entry
+                    .max_kv_cache_utilization_rate
+                    .map(|rate| rate as f64 / 100.0),
+            )
+            .await?;
+
+        let component = namespace.component(&endpoint_id.component)?;
         let client = component.endpoint(&endpoint_id.name).client().await?;
 
         let Some(etcd_client) = self.drt.etcd_client() else {

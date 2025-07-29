@@ -7,13 +7,11 @@ use crate::{
     discovery::{ModelManager, ModelWatcher, MODEL_ROOT_PATH},
     engines::StreamingEngineAdapter,
     entrypoint::{input::common, EngineConfig},
-    http::service::service_v2,
+    http::service::{rate_limiter::KvCacheUtilizationRateLimiter, service_v2},
     kv_router::KvRouterConfig,
-    types::{
-        openai::chat_completions::{
-            NvCreateChatCompletionRequest, NvCreateChatCompletionStreamResponse,
-        },
-        openai::completions::{NvCreateCompletionRequest, NvCreateCompletionResponse},
+    types::openai::{
+        chat_completions::{NvCreateChatCompletionRequest, NvCreateChatCompletionStreamResponse},
+        completions::{NvCreateCompletionRequest, NvCreateCompletionResponse},
     },
 };
 use dynamo_runtime::pipeline::RouterMode;
@@ -22,12 +20,14 @@ use dynamo_runtime::{DistributedRuntime, Runtime};
 
 /// Build and run an HTTP service
 pub async fn run(runtime: Runtime, engine_config: EngineConfig) -> anyhow::Result<()> {
+    let rate_limiter = build_rate_limiter(&engine_config);
     let http_service = service_v2::HttpService::builder()
         .port(engine_config.local_model().http_port())
         .enable_chat_endpoints(true)
         .enable_cmpl_endpoints(true)
         .enable_embeddings_endpoints(true)
         .with_request_template(engine_config.local_model().request_template())
+        .with_rate_limiter(rate_limiter.clone())
         .build()?;
     match engine_config {
         EngineConfig::Dynamic(_) => {
@@ -43,6 +43,7 @@ pub async fn run(runtime: Runtime, engine_config: EngineConfig) -> anyhow::Resul
                         MODEL_ROOT_PATH,
                         router_config.router_mode,
                         Some(router_config.kv_router_config),
+                        rate_limiter,
                     )
                     .await?;
                 }
@@ -100,13 +101,22 @@ async fn run_watcher(
     network_prefix: &str,
     router_mode: RouterMode,
     kv_router_config: Option<KvRouterConfig>,
+    rate_limiter: KvCacheUtilizationRateLimiter,
 ) -> anyhow::Result<()> {
     let watch_obj = ModelWatcher::new(runtime, model_manager, router_mode, kv_router_config);
     tracing::info!("Watching for remote model at {network_prefix}");
     let models_watcher = etcd_client.kv_get_and_watch_prefix(network_prefix).await?;
     let (_prefix, _watcher, receiver) = models_watcher.dissolve();
     let _watcher_task = tokio::spawn(async move {
-        watch_obj.watch(receiver).await;
+        watch_obj.watch(receiver, rate_limiter).await;
     });
     Ok(())
+}
+
+fn build_rate_limiter(engine_config: &EngineConfig) -> KvCacheUtilizationRateLimiter {
+    KvCacheUtilizationRateLimiter::new(
+        engine_config
+            .local_model()
+            .enable_kv_cache_utilization_rate_limiter(),
+    )
 }

@@ -40,7 +40,9 @@ pub async fn run(
         .http_port(Some(flags.http_port))
         .router_config(Some(flags.router_config()))
         .request_template(flags.request_template.clone())
-        .migration_limit(flags.migration_limit);
+        .migration_limit(flags.migration_limit)
+        .enable_kv_cache_utilization_rate_limiter(flags.enable_kv_cache_utilization_rate_limiter)
+        .max_kv_cache_utilization_rate(flags.max_kv_cache_utilization_rate);
 
     // TODO: old, address this later:
     // If `in=dyn` we want the trtllm/sglang/vllm subprocess to listen on that endpoint.

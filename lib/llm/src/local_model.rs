@@ -33,6 +33,9 @@ const DEFAULT_NAME: &str = "dynamo";
 /// Engines don't usually provide a default, so we do.
 const DEFAULT_KV_CACHE_BLOCK_SIZE: u32 = 16;
 
+/// Default maximum allowed aggregate KV cache utilization rate for this model (in integer percentage terms)
+const DEFAULT_MAX_KV_CACHE_UTILIZATION_RATE: u64 = 100;
+
 /// We can't have it default to 0, so pick something
 const DEFAULT_HTTP_PORT: u16 = 8080;
 
@@ -47,6 +50,8 @@ pub struct LocalModelBuilder {
     kv_cache_block_size: u32,
     http_port: u16,
     migration_limit: u32,
+    enable_kv_cache_utilization_rate_limiter: bool,
+    max_kv_cache_utilization_rate: u64,
 }
 
 impl Default for LocalModelBuilder {
@@ -62,6 +67,8 @@ impl Default for LocalModelBuilder {
             template_file: Default::default(),
             router_config: Default::default(),
             migration_limit: Default::default(),
+            enable_kv_cache_utilization_rate_limiter: Default::default(),
+            max_kv_cache_utilization_rate: DEFAULT_MAX_KV_CACHE_UTILIZATION_RATE,
         }
     }
 }
@@ -119,6 +126,22 @@ impl LocalModelBuilder {
         self
     }
 
+    pub fn enable_kv_cache_utilization_rate_limiter(
+        &mut self,
+        enable_kv_cache_utilization_rate_limiter: bool,
+    ) -> &mut Self {
+        self.enable_kv_cache_utilization_rate_limiter = enable_kv_cache_utilization_rate_limiter;
+        self
+    }
+
+    pub fn max_kv_cache_utilization_rate(
+        &mut self,
+        max_kv_cache_utilization_rate: u64,
+    ) -> &mut Self {
+        self.max_kv_cache_utilization_rate = max_kv_cache_utilization_rate;
+        self
+    }
+
     /// Make an LLM ready for use:
     /// - Download it from Hugging Face (and NGC in future) if necessary
     /// - Resolve the path
@@ -155,6 +178,9 @@ impl LocalModelBuilder {
                 template,
                 http_port: self.http_port,
                 router_config: self.router_config.take().unwrap_or_default(),
+                enable_kv_cache_utilization_rate_limiter: self
+                    .enable_kv_cache_utilization_rate_limiter,
+                max_kv_cache_utilization_rate: self.max_kv_cache_utilization_rate,
             });
         }
 
@@ -212,6 +238,8 @@ impl LocalModelBuilder {
             template,
             http_port: self.http_port,
             router_config: self.router_config.take().unwrap_or_default(),
+            enable_kv_cache_utilization_rate_limiter: self.enable_kv_cache_utilization_rate_limiter,
+            max_kv_cache_utilization_rate: self.max_kv_cache_utilization_rate,
         })
     }
 }
@@ -224,6 +252,8 @@ pub struct LocalModel {
     template: Option<RequestTemplate>,
     http_port: u16, // Only used if input is HTTP server
     router_config: RouterConfig,
+    enable_kv_cache_utilization_rate_limiter: bool,
+    max_kv_cache_utilization_rate: u64,
 }
 
 impl LocalModel {
@@ -272,6 +302,11 @@ impl LocalModel {
         self.card
     }
 
+    /// Whether the KV cache utilization rate limiter is enabled for this model
+    pub fn enable_kv_cache_utilization_rate_limiter(&self) -> bool {
+        self.enable_kv_cache_utilization_rate_limiter
+    }
+
     /// Attach this model the endpoint. This registers it on the network
     /// allowing ingress to discover it.
     pub async fn attach(
@@ -302,10 +337,16 @@ impl LocalModel {
         // (Why don't we put the model card directly under this key?)
         let network_name = ModelNetworkName::from_local(endpoint, etcd_client.lease_id());
         tracing::debug!("Registering with etcd as {network_name}");
+        let max_kv_cache_utilization_rate = if self.enable_kv_cache_utilization_rate_limiter {
+            Some(self.max_kv_cache_utilization_rate)
+        } else {
+            None
+        };
         let model_registration = ModelEntry {
             name: self.display_name().to_string(),
             endpoint: endpoint.id(),
             model_type,
+            max_kv_cache_utilization_rate,
         };
         etcd_client
             .kv_create(
