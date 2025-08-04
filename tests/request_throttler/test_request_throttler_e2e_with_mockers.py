@@ -234,6 +234,89 @@ async def test_request_throttler_e2e(request, runtime_services):
         if os.path.exists(mocker_args_file):
             os.unlink(mocker_args_file)
 
+@pytest.mark.pre_merge
+async def test_request_throttler_disabled(request, runtime_services):
+    """
+    Test that when request throttling is disabled, all-workers-busy events don't affect requests
+    """
+    nats_process, etcd_process = runtime_services
+
+    mocker_args = {"speedup_ratio": SPEEDUP_RATIO, "block_size": BLOCK_SIZE}
+    mocker_args_file = os.path.join(request.node.name, "mocker_args.json")
+    with open(mocker_args_file, "w") as f:
+        json.dump(mocker_args, f)
+
+    # Create frontend WITHOUT request throttling environment variable
+    command = [
+        "python",
+        "-m",
+        "dynamo.frontend",
+        "--kv-cache-block-size",
+        str(BLOCK_SIZE),
+        "--router-mode",
+        "kv",
+        "--http-port",
+        str(FRONTEND_PORT + 2),
+        "--namespace",
+        "test-namespace",
+    ]
+
+    env = os.environ.copy()
+    env["DYN_NAMESPACE"] = "test-namespace"
+
+    frontend = ManagedProcess(
+        command=command,
+        env=env,
+        timeout=60,
+        display_output=True,
+        health_check_ports=[FRONTEND_PORT + 2],
+        health_check_urls=[
+            (
+                f"http://localhost:{FRONTEND_PORT + 2}/v1/models",
+                lambda r: r.status_code == 200,
+            )
+        ],
+        log_dir=request.node.name,
+        terminate_existing=False,
+    )
+
+    try:
+        frontend.__enter__()
+
+        mocker = MockerProcess(
+            request, "dyn://test-namespace.mocker.generate", mocker_args_file
+        )
+        mocker.__enter__()
+
+        await asyncio.sleep(2)
+
+        base_url = f"http://localhost:{FRONTEND_PORT + 2}/v1/chat/completions"
+
+        # Verify normal operation
+        status, _ = await send_test_request(base_url)
+        assert status == 200, f"Expected 200, got {status}"
+
+        # Publish all-workers-busy event
+        logger.info("=== Publishing event with request throttling disabled ===")
+        await publish_all_workers_busy_event()
+        await asyncio.sleep(0.5)
+
+        # Should still work (not throttled)
+        status, _ = await send_test_request(base_url)
+        assert (
+            status == 200
+        ), f"Expected 200 (request throttling disabled), got {status}"
+
+        logger.info("✓ Request throttling correctly disabled")
+
+    finally:
+        if "frontend" in locals():
+            frontend.__exit__(None, None, None)
+        if "mocker" in locals():
+            mocker.__exit__(None, None, None)
+        if os.path.exists(mocker_args_file):
+            os.unlink(mocker_args_file)
+
 
 async def send_test_request(
     url: str, expect_success: bool = True, max_retries: int = 4
