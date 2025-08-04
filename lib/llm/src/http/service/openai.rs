@@ -163,7 +163,9 @@ fn check_request_throttled(
     endpoint: &Endpoint,
     request_type: &RequestType,
 ) -> Result<(), ErrorResponse> {
-    if state.request_throttler().is_throttled() {
+    let is_throttled = state.request_throttler().is_throttled();
+    tracing::info!("Checking if request throttled: {}", is_throttled);
+    if is_throttled {
         tracing::warn!("Triggered request throttling, the system is currently overloaded. Rejecting current request");
         state
             .metrics_clone()

@@ -150,10 +150,16 @@ impl HttpServiceRequestThrottler {
     /// Check if the current underlying state is throttled
     pub fn is_throttled(&self) -> bool {
         if !self.is_enabled {
+            tracing::info!("Throttling service is disabled, skipping check");
             return false;
         }
 
         let state = self.request_throttling_state.read().unwrap();
+        tracing::info!(
+            "Throttling service is enabled={}, start_time={:?}",
+            self.is_enabled,
+            state.request_throttling_start
+        );
         state.is_throttled()
     }
 
