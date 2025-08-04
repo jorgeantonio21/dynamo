@@ -22,7 +22,7 @@ NUM_MOCKERS = 2
 BLOCK_SIZE = 16
 SPEEDUP_RATIO = 10.0
 FRONTEND_PORT = 8091
-REQUEST_THROTTLE_DURATION_MS = 3000  # 3 seconds for faster testing, this is the duration of the request throttling window
+REQUEST_THROTTLE_DURATION_MS = 5000  # 5 seconds for faster testing, this is the duration of the request throttling window
 MAX_QUEUE_DEPTH = 1  # Low threshold for easier testing
 
 
