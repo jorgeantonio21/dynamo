@@ -177,7 +177,7 @@ async def test_request_throttler_e2e(request, runtime_services):
         await publish_all_workers_busy_event()
 
         # Give the request throttler time to process the event
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(0.5)
 
         # Step 3: Verify requests now get 503 responses
         logger.info("=== Testing request throttling active ===")
