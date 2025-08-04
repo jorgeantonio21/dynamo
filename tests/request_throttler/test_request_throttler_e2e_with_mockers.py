@@ -257,8 +257,8 @@ async def test_request_throttler_disabled(request, runtime_services):
         "kv",
         "--http-port",
         str(FRONTEND_PORT + 2),
-        "--namespace",
-        "test-namespace",
+        "--endpoint-id",
+        "dyn://test-namespace.frontend.generate",
     ]
 
     env = os.environ.copy()
