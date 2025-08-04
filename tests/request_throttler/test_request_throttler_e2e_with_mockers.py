@@ -168,7 +168,7 @@ async def test_request_throttler_e2e(request, runtime_services):
 
         # Step 1: Verify normal requests work
         logger.info("=== Testing normal operation ===")
-        status, response = await send_test_request(base_url)
+        status, response = await send_test_request(base_url, expect_success=True)
         assert status == 200, f"Expected 200, got {status}. Response: {response}"
         logger.info("✓ Normal request successful")
 
@@ -181,7 +181,7 @@ async def test_request_throttler_e2e(request, runtime_services):
 
         # Step 3: Verify requests now get 503 responses
         logger.info("=== Testing request throttling active ===")
-        status, response = await send_test_request(base_url, expect_success=False)
+        status, response = await send_test_request(base_url, expect_success=False, max_retries=0)
         assert (
             status == 503
         ), f"Expected 503 (request throttled), got {status}. Response: {response}"
@@ -189,7 +189,7 @@ async def test_request_throttler_e2e(request, runtime_services):
 
         # Step 4: Send multiple requests to ensure consistent request throttling
         for i in range(3):
-            status, _ = await send_test_request(base_url, expect_success=False)
+            status, _ = await send_test_request(base_url, expect_success=False, max_retries=0)
             assert status == 503, f"Request {i+1}: Expected 503, got {status}"
             await asyncio.sleep(0.1)  # Small delay between requests
         logger.info("✓ Multiple requests consistently request throttled")
