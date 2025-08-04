@@ -181,7 +181,9 @@ async def test_request_throttler_e2e(request, runtime_services):
 
         # Step 3: Verify requests now get 503 responses
         logger.info("=== Testing request throttling active ===")
-        status, response = await send_test_request(base_url, expect_success=False, max_retries=0)
+        status, response = await send_test_request(
+            base_url, expect_success=False, max_retries=0
+        )
         assert (
             status == 503
         ), f"Expected 503 (request throttled), got {status}. Response: {response}"
@@ -189,7 +191,9 @@ async def test_request_throttler_e2e(request, runtime_services):
 
         # Step 4: Send multiple requests to ensure consistent request throttling
         for i in range(3):
-            status, _ = await send_test_request(base_url, expect_success=False, max_retries=0)
+            status, _ = await send_test_request(
+                base_url, expect_success=False, max_retries=0
+            )
             assert status == 503, f"Request {i+1}: Expected 503, got {status}"
             await asyncio.sleep(0.1)  # Small delay between requests
         logger.info("✓ Multiple requests consistently request throttled")
@@ -243,6 +247,8 @@ async def send_test_request(
     }
 
     wait_time = 1  # Start with 1 second
+    last_status = 404
+    last_response = "No attempts made"
 
     for attempt in range(max_retries + 1):
         await asyncio.sleep(wait_time)
@@ -252,6 +258,9 @@ async def send_test_request(
                     url, json=payload, timeout=aiohttp.ClientTimeout(total=10)
                 ) as response:
                     text = await response.text()
+                    last_status = response.status
+                    last_response = text
+
                     if response.status == 200:
                         logger.info(f"Request succeeded on attempt {attempt + 1}")
                         return response.status, text
@@ -266,7 +275,7 @@ async def send_test_request(
             wait_time *= 2  # Double the wait time (exponential backoff)
 
     # If we get here, all retries failed
-    return 404, "Failed after all retries"
+    return last_status, last_response
 
 
 async def wait_for_request_throttle_to_clear(duration_seconds: float):
